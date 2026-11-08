@@ -28,6 +28,10 @@ LEGAL_FORMS = frozenset(
         "gongsi",
         "gufen",
         "zeren",
+        "pjsc",
+        "jsc",
+        "ojsc",
+        "cjsc",
     }
 )
 

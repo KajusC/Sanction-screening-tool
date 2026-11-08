@@ -4,7 +4,7 @@ import pycountry
 from pydantic import BaseModel, Field, field_validator
 
 from sanction_check.schemas.candidate_schema import EntityTypeName, SearchMethod
-from sanction_check.schemas.decision_schema import Status
+from sanction_check.schemas.decision_schema import Evidence, Status
 from sanction_check.schemas.web_search_schema import WebSearchRecord
 
 MIN_NAME_LENGTH = 2
@@ -47,13 +47,6 @@ class CandidateSummary(BaseModel):
     reasons: list[str]
 
 
-class Evidence(BaseModel):
-    source: str
-    url: str
-    snippet: str
-    last_change: datetime
-
-
 class ScreeningMetadata(BaseModel):
     screened_at: datetime
     llm_model: str
@@ -67,6 +60,7 @@ class ScreeningResult(BaseModel):
     input: ScreeningInput
     status: Status
     matched_entity: MatchedEntity | None
+    llm_confidence: float | None
     confidence: float | None
     match_reasons: list[str]
     candidates: list[CandidateSummary]

@@ -6,7 +6,9 @@ from pydantic import BaseModel
 from sanction_check.schemas.decision_schema import Status
 from sanction_check.schemas.screening_schema import ScreeningInput
 
-EvalCategory = Literal["exact", "variant", "negative", "common_name", "cross_script", "cross_script_clean"]
+EvalCategory = Literal[
+    "confirmed", "exact", "variant", "negative", "common_name", "cross_script", "cross_script_clean"
+]
 
 
 class EvalTarget(BaseModel):

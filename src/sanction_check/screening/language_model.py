@@ -30,10 +30,7 @@ WebSearchMode = Literal["off", "allowed", "used_up"]
 
 LANGUAGE_MODEL_TEMPERATURE = 0
 MAX_ATTEMPTS = 2
-FALLBACK_SUGGESTED_ACTION = (
-    "The language model did not return a valid decision. "
-    "An analyst must review the supplier before onboarding or payment."
-)
+FALLBACK_SUGGESTED_ACTION = "The language model did not return a valid decision."
 PROMPT_FILE_NAME = "review_prompt.md"
 HIDDEN_CANDIDATE_FIELDS = {"score", "reasons", "vector_similarity"}
 DECISION_RESPONSE_FORMAT = {
@@ -129,9 +126,13 @@ def reject_unknown_candidate_id(decision: LanguageModelDecision, candidates: lis
         raise ValueError(f"unknown candidate id: {decision.matched_candidate_id!r}")
 
 
+def strip_code_fences(content: str) -> str:
+    return content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+
+
 def parse_decision(completion: ChatCompletion, candidates: list[ScoredCandidate]) -> LanguageModelDecision:
     message = completion.choices[0].message
-    content = message.content or ""
+    content = strip_code_fences(message.content or "")
 
     try:
         decision = LanguageModelDecision.model_validate_json(content)
@@ -177,7 +178,11 @@ def retry_message(error_text: str) -> ChatCompletionUserMessageParam:
 
 def fallback_decision(error_text: str) -> LanguageModelDecision:
     return LanguageModelDecision(
-        matched_candidate_id=None, status="review", rationale=error_text, suggested_action=FALLBACK_SUGGESTED_ACTION
+        matched_candidate_id=None,
+        status="review",
+        rationale=error_text,
+        evidence=[],
+        suggested_action=FALLBACK_SUGGESTED_ACTION,
     )
 
 

@@ -78,7 +78,7 @@ def screen_supplier(supplier: ScreeningInput, *, should_search_web: bool) -> Scr
 
     outcome = decide_with_language_model(supplier, candidates, should_search_web=should_search_web)
 
-    status = apply_status_rules(outcome.decision.status, candidates, supplier, get_settings().hit_threshold)
+    status = apply_status_rules(outcome.decision.status, candidates, supplier)
     log.info("status %s (language model said %s)", status, outcome.decision.status)
 
     matched_candidate = (
@@ -92,9 +92,10 @@ def screen_supplier(supplier: ScreeningInput, *, should_search_web: bool) -> Scr
         if matched_candidate
         else None,
         confidence=matched_candidate.score if matched_candidate else None,
+        llm_confidence = outcome.decision.confidence,
         match_reasons=matched_candidate.reasons if matched_candidate else [],
         candidates=[CandidateSummary.model_validate(candidate, from_attributes=True) for candidate in candidates],
-        evidence=build_evidence(matched_candidate) if matched_candidate else [],
+        evidence=[*(build_evidence(matched_candidate) if matched_candidate else []), *outcome.decision.evidence],
         web_searches=outcome.web_searches,
         recommended_action=outcome.decision.suggested_action,
         rationale=outcome.decision.rationale,

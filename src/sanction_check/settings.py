@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     postgres_host: str = "127.0.0.1"
     top_k: int = 10
     llm_model: str = "deepseek/deepseek-v4.1-flash-1017"
-    hit_threshold: float = 0.99
+    hit_threshold: float = 0.99 # Must have a country to be likely
+    review_threshold: float = 0.90
     embedding_model: str = "qwen/qwen3-embedding-8b"
     vector_review_threshold: float = 0.80
     tavily_api_key: SecretStr | None = None

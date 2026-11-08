@@ -2,7 +2,8 @@ import re
 from pathlib import Path
 
 from sanction_check.schemas.candidate_schema import ScoredCandidate
-from sanction_check.schemas.screening_schema import Evidence, ScreeningResult
+from sanction_check.schemas.decision_schema import Evidence
+from sanction_check.schemas.screening_schema import ScreeningResult
 
 OPENSANCTIONS_ENTITY_URL = "https://www.opensanctions.org/entities/{id}/"
 SCREENING_DIRECTORY = Path("data/screening")

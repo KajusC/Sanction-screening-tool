@@ -25,10 +25,12 @@ from sanction_check.settings import get_settings
 
 RESULTS_DIRECTORY = Path("eval/results")
 REPORT_TIMESTAMP_FORMAT = "%Y%m%dT%H%M%SZ"
+CONFIRMED_CATEGORIES: list[EvalCategory] = ["confirmed"]
 POSITIVE_CATEGORIES: list[EvalCategory] = ["exact", "variant"]
 CLEAN_CATEGORIES: list[EvalCategory] = ["negative", "common_name"]
 CROSS_SCRIPT_POSITIVE_CATEGORIES: list[EvalCategory] = ["cross_script"]
 CROSS_SCRIPT_CLEAN_CATEGORIES: list[EvalCategory] = ["cross_script_clean"]
+CONFIRMED_LIKELY_HIT_TARGET = 1.0
 DIRECT_RECALL_TARGET = 0.99
 CROSS_SCRIPT_RECALL_TARGET = 0.90
 CLEAN_LIKELY_HIT_LIMIT = 0.01
@@ -55,12 +57,16 @@ def screen_case(case: EvalCase) -> ScreeningResult:
     return result
 
 
-def run_case(case: EvalCase) -> EvalCaseResult:
+def run_case(case: EvalCase, save_individual_to: Path | None = None) -> EvalCaseResult:
     started_at = time.perf_counter()
     result = screen_case(case)
     latency_seconds = time.perf_counter() - started_at
 
     log.info("case %s (%s) status %s in %.1fs", case.id, case.category, result.status, latency_seconds)
+
+    if save_individual_to is not None:
+        save_individual_to.parent.mkdir(parents=True, exist_ok=True)
+        save_individual_to.write_text(result.model_dump_json(indent=2), encoding="utf-8")
 
     return EvalCaseResult(
         case=case,
@@ -111,6 +117,9 @@ def build_maximum_metric(name: str, value: float, maximum: float) -> EvalMetric:
 def build_group_metrics(
     label: str, positives: list[EvalCaseResult], clean: list[EvalCaseResult], recall_target: float
 ) -> list[EvalMetric]:
+    if not positives and not clean:
+        return []
+
     return [
         build_minimum_metric(
             f"{label} recall (review + likely_hit)", compute_recall(positives, f"{label} hits"), recall_target
@@ -128,6 +137,17 @@ def build_group_metrics(
     ]
 
 
+def build_confirmed_metrics(confirmed: list[EvalCaseResult]) -> list[EvalMetric]:
+    if not confirmed:
+        return []
+
+    return [
+        build_minimum_metric(
+            "Confirmed hits marked likely_hit", compute_recall(confirmed, "confirmed hits"), CONFIRMED_LIKELY_HIT_TARGET
+        )
+    ]
+
+
 def build_metrics(results: list[EvalCaseResult]) -> list[EvalMetric]:
     positives = select_results(results, POSITIVE_CATEGORIES)
     correct_entity_rate = compute_rate(
@@ -139,6 +159,7 @@ def build_metrics(results: list[EvalCaseResult]) -> list[EvalMetric]:
     total_cost_usd = sum(result.cost_usd for result in results)
 
     return [
+        *build_confirmed_metrics(select_results(results, CONFIRMED_CATEGORIES)),
         *build_group_metrics("Direct", positives, select_results(results, CLEAN_CATEGORIES), DIRECT_RECALL_TARGET),
         *build_group_metrics(
             "Cross-script",
@@ -245,9 +266,17 @@ def run_eval(cases_path: Path) -> Path:
     cases = read_cases(cases_path)
     log.info("running %d eval cases from %s", len(cases), cases_path)
 
+    date_now = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
+    individual_review_directory = RESULTS_DIRECTORY / "individual_review" / date_now
+    individual_review_directory.mkdir(parents=True, exist_ok=True)
+
     results = []
     for number, case in enumerate(cases, start=1):
-        results.append(run_case(case))
+        new_result_path = individual_review_directory / f"{case.id}.json"
+
+        result = run_case(case, save_individual_to=new_result_path)
+        results.append(result)
+
         if number % PROGRESS_LOG_INTERVAL == 0:
             log.info("evaluated %d of %d cases", number, len(cases))
 

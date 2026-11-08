@@ -113,11 +113,12 @@ How code in this repo must look. Every change follows these rules, so that all c
 
 ## CLI
 
-- Typer (`main ...`) is the only entry point. There is no `manage.py`, and there are no Django management commands.
+- Typer (`main ...`) is the only entry point of the app. There is no `manage.py`, and there are no Django management commands.
+- One-off tools that are not part of the app live in `scripts/`, one file each, outside the package. A script runs with `uv run python scripts/<name>.py`, starts with `typer.run`, and writes to the terminal with `typer.echo` like `cli.py`. The app never imports a script.
 - Django commands that we need are thin Typer commands that call `django.core.management.call_command` (`main migrate`, `main makemigrations`).
 - `cli.py` is thin. A command parses arguments, calls one function and prints its return value. No logic in commands. Writing a file is logic: a function writes it and returns the path, and the command prints the path.
-- Command names are kebab-case: `eval build`, `eval run`.
-- Only `cli.py` writes to the terminal, with `typer.echo`. Results go to stdout. Messages go to stderr (`err=True`).
+- Command names are kebab-case: `eval run`, `makemigrations`.
+- Only `cli.py` and the scripts in `scripts/` write to the terminal, with `typer.echo`. Results go to stdout. Messages go to stderr (`err=True`).
 - No `print()` anywhere.
 
 ## Logging

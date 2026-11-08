@@ -2,7 +2,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 MIN_QUERY_LENGTH = 2
 MAX_QUERY_LENGTH = 200
-MAX_SNIPPET_LENGTH = 500
+MAX_SNIPPET_LENGTH = 700
 
 
 class WebSearchArguments(BaseModel):

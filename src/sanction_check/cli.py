@@ -2,9 +2,9 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+import uvicorn
 from django.core.management import call_command
 
-from sanction_check.evaluation.build_set import build_eval_set
 from sanction_check.evaluation.run import run_eval
 from sanction_check.loading.embed import embed_missing_names
 from sanction_check.loading.opensanctions import load_sources
@@ -13,6 +13,7 @@ from sanction_check.screening.result import write_result
 from sanction_check.screening.supplier_screening import find_ranked_candidates, screen_supplier
 
 EVAL_CASES_PATH = Path("eval/cases.jsonl")
+API_PORT = 8000
 
 app = typer.Typer(no_args_is_help=True)
 eval_app = typer.Typer(no_args_is_help=True)
@@ -66,10 +67,10 @@ def screen(
     typer.echo(write_result(screen_supplier(supplier, should_search_web=web_search)))
 
 
-@eval_app.command("build")
-def eval_build(output: Path) -> None:
-    """Regenerate eval cases from real data and write them to OUTPUT."""
-    typer.echo(f"{build_eval_set(output)} cases written to {output}")
+@app.command()
+def serve(host: str = "127.0.0.1", port: int = API_PORT) -> None:
+    """Serve the screening API."""
+    uvicorn.run("sanction_check.api:app", host=host, port=port)
 
 
 @eval_app.command("run")
