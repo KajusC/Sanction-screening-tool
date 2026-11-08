@@ -1,0 +1,7 @@
+*        text eol=crlf
+
+*.py     text diff=python
+
+/**/postinst* text eol=lf
+
+relative/path/*.txt text eol=lf
