@@ -67,6 +67,7 @@ Also `GET /health`, docs at `/scalar` and `/docs`. No authentication: keep it on
 
 ```sh
 uv run main eval run                                          # writes eval/results/<timestamp>.md and .json
+uv run main eval run --web-search                             # same, with web search on
 uv run python scripts/build_eval_set.py eval/cases.new.jsonl  # regenerate cases (needs DB, GLEIF API, OpenRouter)
 ```
 

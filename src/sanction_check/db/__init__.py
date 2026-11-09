@@ -3,6 +3,8 @@ from django.conf import settings
 
 from sanction_check.settings import get_settings
 
+CONNECT_TIMEOUT_SECONDS = 20
+
 _settings = get_settings()
 
 settings.configure(
@@ -13,6 +15,7 @@ settings.configure(
             "USER": _settings.postgres_user,
             "PASSWORD": _settings.postgres_password.get_secret_value(),
             "HOST": _settings.postgres_host,
+            "OPTIONS": {"connect_timeout": CONNECT_TIMEOUT_SECONDS},
         }
     },
     INSTALLED_APPS=["django.contrib.postgres", "sanction_check.db"],

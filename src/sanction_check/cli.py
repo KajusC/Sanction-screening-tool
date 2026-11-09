@@ -5,6 +5,7 @@ import typer
 import uvicorn
 from django.core.management import call_command
 
+from sanction_check.db.manage import check_database
 from sanction_check.evaluation.run import run_eval
 from sanction_check.loading.embed import embed_missing_names
 from sanction_check.loading.opensanctions import load_sources
@@ -14,6 +15,8 @@ from sanction_check.screening.supplier_screening import find_ranked_candidates, 
 
 EVAL_CASES_PATH = Path("eval/cases.jsonl")
 API_PORT = 8000
+
+check_database()
 
 app = typer.Typer(no_args_is_help=True)
 eval_app = typer.Typer(no_args_is_help=True)
@@ -74,6 +77,9 @@ def serve(host: str = "127.0.0.1", port: int = API_PORT) -> None:
 
 
 @eval_app.command("run")
-def eval_run(cases: Path = EVAL_CASES_PATH) -> None:
+def eval_run(
+    cases: Path = EVAL_CASES_PATH,
+    web_search: Annotated[bool, typer.Option("--web-search")] = False,
+) -> None:
     """Run the eval cases and write the report."""
-    typer.echo(run_eval(cases))
+    typer.echo(run_eval(cases, should_search_web=web_search))

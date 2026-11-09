@@ -6,6 +6,7 @@ from typing import get_args
 
 from django.db import transaction
 
+from sanction_check.db.manage import check_database
 from sanction_check.db.models import EntityName
 from sanction_check.helpers.log import log
 from sanction_check.matching.normalize import CJK_CHARACTER_PATTERN
@@ -45,21 +46,21 @@ def read_cases(cases_path: Path) -> list[EvalCase]:
     return [EvalCase.model_validate_json(line) for line in lines if line]
 
 
-def screen_case(case: EvalCase) -> ScreeningResult:
+def screen_case(case: EvalCase, should_search_web: bool) -> ScreeningResult:
     if not case.should_hide_cjk_names:
-        return screen_supplier(case.input, should_search_web=False)
+        return screen_supplier(case.input, should_search_web=should_search_web)
 
     with transaction.atomic():
         EntityName.objects.filter(entity_id=case.expected_entity_id, name_raw__regex=CJK_CHARACTER_PATTERN).delete()
 
-        result = screen_supplier(case.input, should_search_web=False)
+        result = screen_supplier(case.input, should_search_web=should_search_web)
         transaction.set_rollback(True)
     return result
 
 
-def run_case(case: EvalCase, save_individual_to: Path | None = None) -> EvalCaseResult:
+def run_case(case: EvalCase, should_search_web: bool, save_individual_to: Path | None = None) -> EvalCaseResult:
     started_at = time.perf_counter()
-    result = screen_case(case)
+    result = screen_case(case, should_search_web=should_search_web)
     latency_seconds = time.perf_counter() - started_at
 
     log.info("case %s (%s) status %s in %.1fs", case.id, case.category, result.status, latency_seconds)
@@ -262,9 +263,10 @@ def write_report(report: EvalReport, markdown_path: Path) -> None:
     markdown_path.with_suffix(".json").write_text(report.model_dump_json(indent=2), encoding="utf-8")
 
 
-def run_eval(cases_path: Path) -> Path:
+def run_eval(cases_path: Path, should_search_web: bool = False) -> Path:
+    check_database()
     cases = read_cases(cases_path)
-    log.info("running %d eval cases from %s", len(cases), cases_path)
+    log.info("running %d eval cases from %s", len(cases), "with web search" if should_search_web else "", cases_path)
 
     date_now = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
     individual_review_directory = RESULTS_DIRECTORY / "individual_review" / date_now
@@ -274,7 +276,7 @@ def run_eval(cases_path: Path) -> Path:
     for number, case in enumerate(cases, start=1):
         new_result_path = individual_review_directory / f"{case.id}.json"
 
-        result = run_case(case, save_individual_to=new_result_path)
+        result = run_case(case, should_search_web=should_search_web, save_individual_to=new_result_path)
         results.append(result)
 
         if number % PROGRESS_LOG_INTERVAL == 0:
