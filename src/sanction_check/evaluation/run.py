@@ -1,5 +1,4 @@
 import statistics
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import get_args
@@ -20,12 +19,14 @@ from sanction_check.schemas.evaluation_schema import (
     EvalReport,
 )
 from sanction_check.schemas.screening_schema import ScreeningResult
+from sanction_check.screening.result import UNSAFE_FILE_NAME_CHARACTERS
 from sanction_check.screening.rules import STATUS_RANK
 from sanction_check.screening.supplier_screening import screen_supplier
 from sanction_check.settings import get_settings
 
 RESULTS_DIRECTORY = Path("eval/results")
-REPORT_TIMESTAMP_FORMAT = "%Y%m%dT%H%M%SZ"
+INTERMEDIATE_DIRECTORY = RESULTS_DIRECTORY / "individual_review"
+REPORT_TIMESTAMP_FORMAT = "%Y%m%dT%H"
 CONFIRMED_CATEGORIES: list[EvalCategory] = ["confirmed"]
 POSITIVE_CATEGORIES: list[EvalCategory] = ["exact", "variant"]
 CLEAN_CATEGORIES: list[EvalCategory] = ["negative", "common_name"]
@@ -58,16 +59,32 @@ def screen_case(case: EvalCase, should_search_web: bool) -> ScreeningResult:
     return result
 
 
-def run_case(case: EvalCase, should_search_web: bool, save_individual_to: Path | None = None) -> EvalCaseResult:
-    started_at = time.perf_counter()
+def build_intermediate_directory(should_search_web: bool) -> Path:
+    search_mode = "web_search" if should_search_web else "no_web_search"
+    started_at = datetime.now(UTC).strftime(REPORT_TIMESTAMP_FORMAT)
+    directory_name = UNSAFE_FILE_NAME_CHARACTERS.sub("_", f"{started_at}_{get_settings().llm_model}_{search_mode}")
+
+    return INTERMEDIATE_DIRECTORY / directory_name
+
+
+def load_or_screen_case(case: EvalCase, should_search_web: bool, intermediate_directory: Path) -> ScreeningResult:
+    intermediate_path = intermediate_directory / f"{case.id}.json"
+    if intermediate_path.exists():
+        log.info("reusing intermediate result of case %s from %s", case.id, intermediate_path)
+        return ScreeningResult.model_validate_json(intermediate_path.read_text(encoding="utf-8"))
+
     result = screen_case(case, should_search_web=should_search_web)
-    latency_seconds = time.perf_counter() - started_at
 
-    log.info("case %s (%s) status %s in %.1fs", case.id, case.category, result.status, latency_seconds)
+    intermediate_path.parent.mkdir(parents=True, exist_ok=True)
+    intermediate_path.write_text(result.model_dump_json(indent=2), encoding="utf-8")
 
-    if save_individual_to is not None:
-        save_individual_to.parent.mkdir(parents=True, exist_ok=True)
-        save_individual_to.write_text(result.model_dump_json(indent=2), encoding="utf-8")
+    return result
+
+
+def run_case(case: EvalCase, should_search_web: bool, intermediate_directory: Path) -> EvalCaseResult:
+    result = load_or_screen_case(case, should_search_web, intermediate_directory)
+
+    log.info("case %s (%s) status %s in %.1fs", case.id, case.category, result.status, result.meta.latency_seconds)
 
     return EvalCaseResult(
         case=case,
@@ -75,8 +92,9 @@ def run_case(case: EvalCase, should_search_web: bool, save_individual_to: Path |
         matched_entity_id=result.matched_entity.id if result.matched_entity else None,
         retry_count=result.meta.attempt_count - 1,
         is_fallback=result.meta.is_fallback,
+        has_web_search=bool(result.web_searches),
         cost_usd=result.meta.cost_usd,
-        latency_seconds=latency_seconds,
+        latency_seconds=result.meta.latency_seconds,
     )
 
 
@@ -171,6 +189,7 @@ def build_metrics(results: list[EvalCaseResult]) -> list[EvalMetric]:
         build_reported_metric("Direct hits with the expected entity", correct_entity_rate),
         build_reported_metric("LLM retries", sum(result.retry_count for result in results)),
         build_reported_metric("LLM fallbacks", sum(result.is_fallback for result in results)),
+        build_reported_metric("Cases where the LLM searched the web", sum(result.has_web_search for result in results)),
         build_reported_metric("Total cost (USD)", total_cost_usd),
         build_reported_metric("Cost per supplier (USD)", total_cost_usd / len(results)),
         build_reported_metric("Latency p50 (seconds)", statistics.median(latencies)),
@@ -218,10 +237,11 @@ def format_category_row(report: EvalCategoryReport) -> str:
 
 def format_off_target_row(result: EvalCaseResult) -> str:
     case = result.case
+    web_search_label = "LLM searched the web" if result.has_web_search else ""
 
     return (
         f"| {case.id} | {case.input.name} | {case.input.country} "
-        f"| {case.category} | {result.status} | {result.matched_entity_id or ''} |"
+        f"| {case.category} | {result.status} | {result.matched_entity_id or ''} | {web_search_label} |"
     )
 
 
@@ -249,8 +269,8 @@ def format_markdown(report: EvalReport) -> str:
         "",
         f"## Cases off target ({len(off_target_results)})",
         "",
-        "| Case | Name | Country | Category | Status | Matched entity |",
-        "|---|---|---|---|---|---|",
+        "| Case | Name | Country | Category | Status | Matched entity | Web search |",
+        "|---|---|---|---|---|---|---|",
         *[format_off_target_row(result) for result in off_target_results],
     ]
 
@@ -268,29 +288,25 @@ def run_eval(cases_path: Path, should_search_web: bool = False) -> Path:
     cases = read_cases(cases_path)
     log.info("running %d eval cases from %s", len(cases), "with web search" if should_search_web else "", cases_path)
 
-    date_now = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
-    individual_review_directory = RESULTS_DIRECTORY / "individual_review" / date_now
-    individual_review_directory.mkdir(parents=True, exist_ok=True)
+    intermediate_directory = build_intermediate_directory(should_search_web)
 
     results = []
     for number, case in enumerate(cases, start=1):
-        new_result_path = individual_review_directory / f"{case.id}.json"
-
-        result = run_case(case, should_search_web=should_search_web, save_individual_to=new_result_path)
-        results.append(result)
+        results.append(run_case(case, should_search_web, intermediate_directory))
 
         if number % PROGRESS_LOG_INTERVAL == 0:
             log.info("evaluated %d of %d cases", number, len(cases))
 
     generated_at = datetime.now(UTC)
+    llm_model = get_settings().llm_model
+    markdown_path = RESULTS_DIRECTORY / f"{generated_at:{REPORT_TIMESTAMP_FORMAT}}_{llm_model}.md"
     report = EvalReport(
         generated_at=generated_at,
-        llm_model=get_settings().llm_model,
+        llm_model=llm_model,
         metrics=build_metrics(results),
         category_reports=build_category_reports(results),
         case_results=results,
     )
-    markdown_path = RESULTS_DIRECTORY / f"{generated_at:{REPORT_TIMESTAMP_FORMAT}}.md"
 
     write_report(report, markdown_path)
 

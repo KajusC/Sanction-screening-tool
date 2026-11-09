@@ -54,6 +54,7 @@ class ScreeningMetadata(BaseModel):
     attempt_count: int
     is_fallback: bool
     cost_usd: float
+    latency_seconds: float
 
 
 class ScreeningResult(BaseModel):

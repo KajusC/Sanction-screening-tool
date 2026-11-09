@@ -1,3 +1,4 @@
+import time
 from datetime import UTC, datetime
 
 from sanction_check.helpers.log import log
@@ -51,7 +52,7 @@ def find_matched_candidate(
     return next((candidate for candidate in candidates if candidate.id == matched_candidate_id), None)
 
 
-def build_metadata(outcome: DecisionOutcome) -> ScreeningMetadata:
+def build_metadata(outcome: DecisionOutcome, latency_seconds: float) -> ScreeningMetadata:
     return ScreeningMetadata(
         screened_at=datetime.now(UTC),
         llm_model=get_settings().llm_model,
@@ -59,10 +60,12 @@ def build_metadata(outcome: DecisionOutcome) -> ScreeningMetadata:
         attempt_count=outcome.attempt_count,
         is_fallback=outcome.is_fallback,
         cost_usd=outcome.cost_usd,
+        latency_seconds=latency_seconds,
     )
 
 
 def screen_supplier(supplier: ScreeningInput, *, should_search_web: bool) -> ScreeningResult:
+    started_at = time.perf_counter()
     log.info("screening supplier %r in %s", supplier.name, supplier.country)
     candidates = find_ranked_candidates(supplier)
     log.info("kept %d candidates", len(candidates))
@@ -99,5 +102,5 @@ def screen_supplier(supplier: ScreeningInput, *, should_search_web: bool) -> Scr
         web_searches=outcome.web_searches,
         recommended_action=outcome.decision.suggested_action,
         rationale=outcome.decision.rationale,
-        meta=build_metadata(outcome),
+        meta=build_metadata(outcome, latency_seconds=time.perf_counter() - started_at),
     )

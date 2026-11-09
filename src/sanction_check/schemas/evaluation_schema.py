@@ -31,6 +31,7 @@ class EvalCaseResult(BaseModel):
     matched_entity_id: str | None
     retry_count: int
     is_fallback: bool
+    has_web_search: bool
     cost_usd: float
     latency_seconds: float
 
